@@ -56,4 +56,4 @@ All results are saved to `output/`:
 - **GO enrichment**: clusterProfiler (hypergeometric test, BH correction)
 - **PPI network**: STRING v12.0 (score ≥ 700, REST API) + Maximal Clique Centrality (igraph)
 - **Immune deconvolution**: CIBERSORT (ν-SVR, LM22 signature, 100 permutations, QN = FALSE)
-- **Group comparison**: Wilcoxon rank-sum test (nominal p-values)
+- **Group comparison**: Wilcoxon rank-sum test
