@@ -38,7 +38,15 @@ pip install -r requirements.txt
 - **Pretraining data:** DeepLesion (public) + HCC cohort CT patches
 - **Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
 
-Clinical data and fine-tuned model weights are available on Zenodo (link to be added).
+## Models
+
+| Name | Description |
+|------|-------------|
+| **LFM-Base** | Official DINOv2 weights |
+| **LFM-DL** | Pretrained on DeepLesion CT patches |
+| **LFM-Mix** | Pretrained on DeepLesion + HCC patches |
+| **LFM-Seq** | Sequential: DeepLesion -> HCC patches |
+
 
 ## Project Structure
 
@@ -97,27 +105,14 @@ python pretraining/pretrain_dinov2.py --data_dir <hcc_patches> --output_dir <ckp
 python finetuning/finetune_dinov2.py --lr_list 1e-5 5e-5 1e-4 --epochs 50
 ```
 
-### 5. Evaluation
-
-```bash
-# Model comparison (DeLong test)
-python evaluation/compare_models.py --clinical <path> --predictions <path>
-
-# Cox regression
-python evaluation/cox_regression.py --clinical <path> --risk_scores <path>
-
-# Subgroup analysis
-python evaluation/subgroup_analysis.py --clinical <path> --predictions <path>
-```
-
-### 6. Robustness Tests
+### 5. Robustness Tests
 
 ```bash
 python robustness/perturbation_dinov2.py
 python robustness/stratified_sampling.py
 ```
 
-### 7. Genomic Association Analysis
+### 6. Genomic Association Analysis
 
 Biological interpretation of imaging-derived risk scores using TCGA-LIHC transcriptomic data.
 
@@ -139,28 +134,7 @@ Rscript radiogenomic_analysis.R
 
 See `genomic_association/README.md` for details.
 
-## Models
 
-| Name | Description |
-|------|-------------|
-| **LFM-Base** | Official DINOv2 weights (ImageNet pretrained) |
-| **LFM-DL** | Pretrained on DeepLesion CT patches |
-| **LFM-Mix** | Pretrained on DeepLesion + HCC patches |
-| **LFM-Seq** | Sequential: DeepLesion -> HCC patches |
-| **FMCIB** | 3D medical imaging foundation model (baseline) |
-| **Radiomics** | Traditional handcrafted features + LASSO (baseline) |
-| **Clinical model** | Clinical variables + elastic-net Cox (baseline) |
-
-## Citation
-
-```bibtex
-@article{xxx,
-  title={xxx},
-  author={xxx},
-  journal={xxx},
-  year={2026}
-}
-```
 
 ## License
 
