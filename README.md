@@ -15,7 +15,7 @@ This repository provides the complete pipeline for:
 | Task | Method |
 |------|--------|
 | **Self-supervised pretraining** | DINOv2 (ViT-S) on CT lesion patches |
-| **MVI & grade prediction** | Cross-phase attention + attention-based MIL |
+| **MVI & pathological grade evaluation** | Cross-phase attention + attention-based MIL |
 | **RFS survival prediction** | Elastic-net Cox regression on deep features |
 | **Robustness evaluation** | Input perturbation + limited training data tests |
 | **3D lesion foundation model baseline** | FMCIB: 3D lesion volume + modified SimCLR |
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ## Data & Model Weights
 
-- **Pretraining data:** DeepLesion + HCC cohort CT patches
+- **Pretraining data:** DeepLesion + HCC-specific CT patches 
 - **Pretrained and fine-tuned Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
 
 ## Models
