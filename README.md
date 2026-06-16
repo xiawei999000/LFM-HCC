@@ -8,8 +8,6 @@
 
 </div>
 
-A vision foundation model pipeline for non-invasive assessment of hepatocellular carcinoma (HCC) aggressiveness and recurrence-free survival (RFS) prediction from contrast-enhanced CT.
-
 ## Overview
 
 This repository provides the complete pipeline for:
@@ -37,7 +35,7 @@ pip install -r requirements.txt
 ## Data & Model Weights
 
 - **Pretraining data:** DeepLesion + HCC cohort CT patches
-- **Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
+- **Pretrained and fine-tuned Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
 
 ## Models
 
