@@ -15,7 +15,7 @@ This repository provides the complete pipeline for:
 | Task | Method |
 |------|--------|
 | **Self-supervised pretraining** | DINOv2 (ViT-S) on CT lesion patches |
-| **MVI & pathological grade evaluation** | Cross-phase attention + attention-based MIL |
+| **MVI & pathological grade evaluation** | Cross-phase attention + attention-based multiple instance learning |
 | **Robustness evaluation** | Input perturbation + limited training data tests |
 | **3D lesion foundation model baseline** | FMCIB: 3D lesion volume + modified SimCLR |
 | **Radiomics baseline** | PyRadiomics + mRMR + LASSO |
