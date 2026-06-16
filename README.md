@@ -16,10 +16,10 @@ This repository provides the complete pipeline for:
 |------|--------|
 | **Self-supervised pretraining** | DINOv2 (ViT-S) on CT lesion patches |
 | **MVI & pathological grade evaluation** | Cross-phase attention + attention-based MIL |
-| **RFS survival prediction** | Elastic-net Cox regression on deep features |
 | **Robustness evaluation** | Input perturbation + limited training data tests |
 | **3D lesion foundation model baseline** | FMCIB: 3D lesion volume + modified SimCLR |
 | **Radiomics baseline** | PyRadiomics + mRMR + LASSO |
+| **RFS survival prediction** | Elastic-net Cox regression on deep features |
 | **Genomic association** | TCGA-LIHC CT imaging data matched transcriptomic data analysis |
 
 ## Installation
@@ -56,10 +56,10 @@ pip install -r requirements.txt
 ├── finetuning/            # Multi-task MIL fine-tuning (MVI + grade)
 ├── fmcib/                 # FMCIB baseline method
 ├── radiomics/             # PyRadiomics feature extraction + LASSO
-├── survival/              # Elastic-net Cox regression for RFS
 ├── inference/             # Model inference utilities
 ├── robustness/            # Perturbation tests, stratified sampling
 ├── visualization/         # Occlusion heatmap tools
+├── survival/              # Elastic-net Cox regression for RFS
 ├── genomic_association/   # TCGA radiogenomic analysis pipeline
 └── README.md
 ```
