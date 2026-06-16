@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ## Data & Model Weights
 
-- **Pretraining data:** DeepLesion + HCC-specific CT patches 
+- **Pretraining data:** [![DOI](https://img.shields.io/badge/DOI-10.xxxx%2Fzenodo.xxxxxx-blue)](https://doi.org/10.xxxx/zenodo.xxxxxx) DeepLesion + HCC-specific CT patches 
 - **Pretrained and fine-tuned Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
 
 ## Models
