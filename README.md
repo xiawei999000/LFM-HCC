@@ -1,4 +1,4 @@
-# HCC-LFM: Liver Foundation Model for Non-invasive HCC Assessment
+# A CT Lesion Foundation Model for Non-invasive Assessment of Hepatocellular Carcinoma Aggressiveness and Recurrence Risk
 
 <div align="center">
 
