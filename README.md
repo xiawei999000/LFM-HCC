@@ -55,7 +55,7 @@ pip install -r requirements.txt
 ├── pretraining/           # DINOv2 self-supervised pretraining
 ├── finetuning/            # Multi-task MIL fine-tuning (MVI + grade)
 ├── fmcib/                 # FMCIB baseline method
-├── radiomics/             # PyRadiomics feature extraction + LASSO
+├── radiomics/             # PyRadiomics feature extraction + mRMR + LASSO
 ├── inference/             # Model inference utilities
 ├── robustness/            # Perturbation tests, stratified sampling
 ├── visualization/         # Occlusion heatmap tools
