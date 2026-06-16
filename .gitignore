@@ -1,0 +1,18 @@
+# Output directories
+output/
+results/
+results_refined/
+
+# Temporary files
+*.tmp
+*_tmp.*
+.DS_Store
+
+# Node modules
+node_modules/
+package.json
+package-lock.json
+
+# R temp
+.Rhistory
+.RData

@@ -1,0 +1,57 @@
+# Radiogenomic Association Analysis
+
+Transcriptomic and immune microenvironment characterization of imaging-derived recurrence risk in hepatocellular carcinoma (TCGA-LIHC).
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `radiogenomic_analysis.R` | Main analysis pipeline (KM, volcano, GO, STRING PPI+MCC, CIBERSORT) |
+| `CIBERSORT.R` | CIBERSORT deconvolution script (Newman et al., 2015, *Nature Methods*) |
+| `LM22.txt` | Leukocyte gene signature matrix for CIBERSORT |
+| `9606.protein.aliases.v12.0.txt.gz` | STRING protein alias mapping (v12.0) |
+
+## Required Input Data
+
+Place the following files in the working directory before running:
+
+- `risk_matched.rds` — data.frame with columns: `patient_id`, `Risk_group` (High/Low), `RFS_months`, `RFS_event`
+- `tpm_matched.rds` — TPM expression matrix (genes × patients)
+- `deg_results.csv` — DESeq2 output with columns: `gene`, `log2FoldChange`, `padj`, `change`
+
+## Required R Packages
+
+```r
+install.packages(c("tidyverse", "ggplot2", "ggpubr", "ggrepel",
+    "survival", "survminer", "igraph", "ggraph", "e1071"))
+BiocManager::install(c("clusterProfiler", "org.Hs.eg.db"))
+```
+
+## Usage
+
+```r
+setwd("path/to/your/data")
+source("radiogenomic_analysis.R")
+```
+
+## Output
+
+All results are saved to `output/`:
+
+| File | Content |
+|------|---------|
+| `Combined_Figure.pdf` | 5-panel combined figure (vector PDF) |
+| `Combined_Figure.png` | 5-panel combined figure (300 dpi PNG) |
+| `GO_BP_Downregulated.csv` | GO enrichment results |
+| `PPI_top10_hub_genes.csv` | Top 10 hub genes by MCC |
+| `PPI_edges.csv` | STRING PPI edge table |
+| `CIBERSORT_result.csv` | 22 immune cell fractions per patient |
+| `CIBERSORT_group_comparison.csv` | Wilcoxon test results (p-value) |
+
+## Methods Summary
+
+- **Differential expression**: DESeq2 (Wald test, apeglm shrinkage, FDR < 0.10, |log2FC| > 0.5)
+- **GO enrichment**: clusterProfiler (hypergeometric test, BH correction)
+- **PPI network**: STRING v12.0 (score ≥ 700, REST API) + Maximal Clique Centrality (igraph)
+- **Immune deconvolution**: CIBERSORT (ν-SVR, LM22 signature, 100 permutations, QN = FALSE)
+- **Group comparison**: Wilcoxon rank-sum test (nominal p-values)
