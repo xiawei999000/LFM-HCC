@@ -1,4 +1,4 @@
-# A CT Lesion Foundation Model for Non-invasive Assessment of Hepatocellular Carcinoma Aggressiveness and Recurrence Risk
+# A CT Lesion Foundation Model for Non-invasive Assessment of Hepatocellular Carcinoma Aggressiveness and Prediction of Recurrence Risk
 
 <div align="center">
 
@@ -20,22 +20,23 @@ This repository provides the complete pipeline for:
 | **MVI & grade prediction** | Cross-phase attention + attention-based MIL |
 | **RFS survival prediction** | Elastic-net Cox regression on deep features |
 | **Robustness evaluation** | Input perturbation + limited training data tests |
+| **3D lesion foundation model baseline** | FMCIB: 3D lesion volume + modified SimCLR |
 | **Radiomics baseline** | PyRadiomics + mRMR + LASSO |
-| **Genomic association** | TCGA-LIHC transcriptomic + immune deconvolution |
+| **Genomic association** | TCGA-LIHC CT imaging data matched transcriptomic data analysis |
 
 ## Installation
 
 ```bash
-git clone https://github.com/xxx/HCC-LFM.git
-cd HCC-LFM
+git clone https://github.com/xiawei999000/LFM-HCC.git
+cd LFM-HCC
 pip install -r requirements.txt
 ```
 
-> **Note:** The FMCIB comparison method requires the external `fmcib` package. See [FMCIB](https://github.com/xxx/fmcib) for installation.
+> **Note:** The FMCIB comparison method requires the external `fmcib` package. See [FMCIB](https://github.com/AIM-Harvard/foundation-cancer-image-biomarker) for installation.
 
 ## Data & Model Weights
 
-- **Pretraining data:** DeepLesion (public) + HCC cohort CT patches
+- **Pretraining data:** DeepLesion + HCC cohort CT patches
 - **Model weights:** [![DOI](https://img.shields.io/badge/Zenodo-link_to_be_added-blue)](https://zenodo.org)
 
 ## Models
@@ -59,7 +60,6 @@ pip install -r requirements.txt
 ├── radiomics/             # PyRadiomics feature extraction + LASSO
 ├── survival/              # Elastic-net Cox regression for RFS
 ├── inference/             # Model inference utilities
-├── evaluation/            # DeLong test, Cox regression, subgroup analysis
 ├── robustness/            # Perturbation tests, stratified sampling
 ├── visualization/         # Occlusion heatmap tools
 ├── genomic_association/   # TCGA radiogenomic analysis pipeline
@@ -121,16 +121,6 @@ Biological interpretation of imaging-derived risk scores using TCGA-LIHC transcr
 cd genomic_association
 Rscript radiogenomic_analysis.R
 ```
-
-| Analysis | Method |
-|----------|--------|
-| Differential expression | DESeq2 (Wald test, apeglm shrinkage) |
-| GO enrichment | clusterProfiler (hypergeometric test, BH correction) |
-| PPI network + hub genes | STRING v12.0 + Maximal Clique Centrality |
-| Immune deconvolution | CIBERSORT (ν-SVR, LM22 signature) |
-
-**Input**: Imaging risk scores, TCGA-LIHC RNA-seq (STAR-Counts)  
-**Output**: Combined figure (transcriptome + immune microenvironment), hub genes, CIBERSORT fractions  
 
 See `genomic_association/README.md` for details.
 
