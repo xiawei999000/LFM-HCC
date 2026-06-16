@@ -44,7 +44,7 @@ pip install -r requirements.txt
 | **LFM-Base** | Official DINOv2 weights |
 | **LFM-DL** | Pretrained on DeepLesion CT patches |
 | **LFM-Mix** | Pretrained on DeepLesion + HCC patches |
-| **LFM-Seq** | Sequential: DeepLesion -> HCC patches |
+| **LFM-Seq** | Sequential pretrained: DeepLesion -> HCC patches |
 
 
 ## Project Structure
