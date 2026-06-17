@@ -85,26 +85,26 @@ python preprocessing/extract_lesion_volumes.py --input_dir <dir> --output_dir <o
 
 ```bash
 # DeepLesion only (LFM-DL)
-python pretraining/pretrain_dinov2.py --data_dir <dl_patches> --output_dir <ckpt_dl>
+python pretraining/pretrain_LFM.py --data_dir <dl_patches> --output_dir <ckpt_dl>
 
 # Combined pretraining (LFM-Mix)
-python pretraining/pretrain_dinov2.py --data_dir <mix_patches> --output_dir <ckpt_mix>
+python pretraining/pretrain_LFM.py --data_dir <mix_patches> --output_dir <ckpt_mix>
 
 # Sequential pretraining (LFM-Seq)
-python pretraining/pretrain_dinov2.py --data_dir <dl_patches> --output_dir <ckpt_dl>
-python pretraining/pretrain_dinov2.py --data_dir <hcc_patches> --output_dir <ckpt_seq> --resume <ckpt_dl/best.pth>
+python pretraining/pretrain_LFM.py --data_dir <dl_patches> --output_dir <ckpt_dl>
+python pretraining/pretrain_LFM.py --data_dir <hcc_patches> --output_dir <ckpt_seq> --resume <ckpt_dl/best.pth>
 ```
 
 ### 4. Fine-tuning
 
 ```bash
-python finetuning/finetune_dinov2.py --lr_list 1e-5,5e-5,1e-4 --epochs 20
+python finetuning/finetune_LFM.py --lr_list 1e-5,5e-5,1e-4 --epochs 20
 ```
 
 ### 5. Robustness Tests
 
 ```bash
-python robustness/perturbation_dinov2.py
+python robustness/perturbation.py
 python robustness/stratified_sampling.py
 ```
 
