@@ -112,4 +112,4 @@ python robustness/stratified_sampling.py
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License.
