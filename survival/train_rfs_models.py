@@ -36,7 +36,7 @@ for model_name, feat_file in DEEP_MODELS.items():
     print(f'{"="*60}')
     print(f'Training: {model_name}')
 
-    feats = pd.read_excel(os.path.join(BASE_DIR, feat_file))
+    feats = pd.read_excel(os.path.join(DATA_DIR, feat_file))
     feature_cols = [c for c in feats.columns if c not in ['Dataset', 'Split', 'ID']]
     data = feats.merge(clinical[['Split', 'ID', 'RFS', 'RFS_status']],
                        on=['Split', 'ID'], how='inner')
