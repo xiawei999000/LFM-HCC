@@ -85,5 +85,7 @@ PRETRAIN_EPOCHS = 100
 
 # ── Finetuning ────────────────────────────────────────────────
 FINETUNE_LR_RANGE = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3]
-FINETUNE_EPOCHS = 50
-FINETUNE_BATCH_SIZE = 16
+FINETUNE_EPOCHS = 20
+FINETUNE_BATCH_SIZE = 32
+
+
