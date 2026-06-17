@@ -98,7 +98,7 @@ python pretraining/pretrain_dinov2.py --data_dir <hcc_patches> --output_dir <ckp
 ### 4. Fine-tuning
 
 ```bash
-python finetuning/finetune_dinov2.py --lr_list 1e-5 5e-5 1e-4 --epochs 50
+python finetuning/finetune_dinov2.py --lr_list 1e-5 5e-5 1e-4 --epochs 20
 ```
 
 ### 5. Robustness Tests
