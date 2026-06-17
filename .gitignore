@@ -1,3 +1,18 @@
+# Data and clinical files
+data/
+raw_data/
+clinical/
+*.xlsx
+*.csv
+*.tsv
+
+# Medical images
+*.nii
+*.nii.gz
+*.dcm
+*.mha
+*.nrrd
+
 # Output directories
 output/
 results/
