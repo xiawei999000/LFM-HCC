@@ -20,6 +20,7 @@ This repository provides the core analysis pipeline for:
 | **3D lesion foundation model baseline** | FMCIB: 3D lesion volume + modified SimCLR |
 | **Radiomics baseline** | PyRadiomics + mRMR + LASSO |
 | **RFS survival prediction** | Elastic-net Cox regression on deep features |
+| **Genomic association** | TCGA-LIHC CT imaging data matched transcriptomic data analysis |
 
 ## Installation
 
@@ -59,6 +60,7 @@ pip install -r requirements.txt
 ├── robustness/            # Perturbation tests, stratified sampling
 ├── visualization/         # Occlusion heatmap tools
 ├── survival/              # Elastic-net Cox regression for RFS
+├── genomic_association/   # TCGA radiogenomic analysis pipeline
 └── README.md
 ```
 
@@ -108,6 +110,16 @@ python robustness/perturbation.py
 python robustness/stratified_sampling.py
 ```
 
+### 6. Genomic Association Analysis
+
+Biological interpretation of imaging-derived risk scores using TCGA-LIHC/TCIA data.
+
+```bash
+# Requires R (≥4.0) with packages: DESeq2, clusterProfiler, igraph, survival, etc.
+cd genomic_association
+```
+
+See `genomic_association/README.md` for details.
 
 
 ## License
