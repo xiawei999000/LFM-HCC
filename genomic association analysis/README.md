@@ -10,7 +10,7 @@ Transcriptomic and immune microenvironment characterization of imaging-derived r
 | 2 | `2.prepare_deg.R` | matched counts + risk → DEG table |
 | 3 | `3.radiogenomic_analysis_ABCDE.R` | matched TPM + risk + DEG → volcano + GO + STRING PPI + CIBERSORT heatmap + boxplots |
 
-Pre-computed matched files and DEG table are included, so you can run step 3 directly:
+Pre-computed matched files and DEG table are included in https://drive.google.com/drive/folders/13H-hw335dG3PTdvw89yepnZKdIJuY6Oy?usp=sharing, so you can run step 3 directly:
 
 ```r
 setwd("path/to/this/directory")
