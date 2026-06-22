@@ -1,6 +1,6 @@
 """
 Occlusion sensitivity visualization: 8x8 occlusion -> probability change -> heatmap -> 128x128 upsampling.
-One folder per patient with original slice, 8x8 heatmap, 128x128 heatmap, and composite figure.
+One folder per patient with original slice, 16x16 heatmap, 128x128 heatmap, and composite figure.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,8 +33,8 @@ PRED_DF = pd.read_excel(PRED_MVI_GRADE_PATH)
 CLI_DF = pd.read_excel(CLINICAL_INFO_PATH)
 CLI_DF.columns = CLI_DF.columns.str.strip()
 
-OCCLUSION_SIZE = 16  # occlusion block size in pixels
-STRIDE = 16          # stride (16 gives 8×8 grid)
+OCCLUSION_SIZE = 8  # occlusion block size in pixels
+STRIDE = 8          # stride (8 gives 16×16 grid)
 GRID_SIZE = 128 // STRIDE  # 8
 
 
