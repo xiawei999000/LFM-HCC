@@ -60,8 +60,12 @@ library(readr)
 # Step 2: Load and match data
 # ============================================================================
 
-## Uncomment and set your working directory:
-setwd("F:\\HCC_LFM\\github\\genomic association")
+## Set your working directory to this script's folder (genomic_association/),
+## which should contain counts_raw.rds, tpm_raw.rds and risk_file.xlsx.
+## Option A — set it manually:
+# setwd("path/to/LFM-HCC/genomic_association")
+## Option B — use the here package (recommended):
+# library(here); setwd(here::here("genomic_association"))
 
 # Load TCGA expression data
 counts_raw <- readRDS("counts_raw.rds")
