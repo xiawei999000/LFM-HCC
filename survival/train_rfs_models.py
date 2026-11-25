@@ -3,6 +3,26 @@ RFS prediction model training script.
 Usage: python train_rfs_models.py
 Input: feature tables (see config.py) + clinical data
 Output: model weight files under RFS_model/
+
+Paper (Sec. 4.5):
+  - EVC1 (Split == 'ext1') is the RFS model development cohort; EVC2
+    (Split == 'ext2') is the independent validation cohort.
+  - For LFM-derived features, univariable Cox regression is first performed
+    for feature pre-screening, and retained features are entered into an
+    elastic-net Cox proportional hazards model.
+  - The penalty parameter and mixing parameter are selected by five-fold
+    cross-validation according to the concordance index. Feature
+    pre-screening is performed WITHIN EACH FOLD using only the training
+    partitions.
+  - The final model is refitted on the entire EVC1 cohort with the selected
+    hyperparameters. EVC2 is not involved in feature selection,
+    hyperparameter tuning, or cutoff determination.
+  - Two clinical reference models are built with the same elastic-net Cox
+    framework WITHOUT univariable pre-screening:
+      * Clinical model: 8 preoperative variables (age, sex, tumor size,
+        HBsAg, AFP, ALT, AST, GGT).
+      * Clinicopathological model: additionally incorporates the
+        postoperative pathological variables (MVI and pathological grade).
 """
 import pandas as pd, numpy as np, os, sys, json, joblib, warnings
 warnings.filterwarnings('ignore')
@@ -23,11 +43,115 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 clinical = pd.read_excel(CLINICAL_INFO_PATH)
 
 DEEP_MODELS = FEATURE_TABLES
-CLIN_COLS = ['Sex', 'Age', 'MVI', 'PathologicalGrade', 'HBsAg', 'AFP',
-             'ALT', 'AST', 'GGT', 'tumor_size']
+
+# Clinical model: eight preoperative variables (paper Sec. 4.5).
+CLIN_COLS = ['Sex', 'Age', 'HBsAg', 'AFP', 'ALT', 'AST', 'GGT', 'tumor_size']
+# Clinicopathological model: additionally MVI and pathological grade.
+CLINICOPATH_COLS = CLIN_COLS + ['MVI', 'PathologicalGrade']
+
+CLINICAL_MODELS = {
+    'Clinical': CLIN_COLS,
+    'Clinicopathological': CLINICOPATH_COLS,
+}
 
 alphas = [0.001, 0.01, 0.05, 0.1, 0.5, 1.0]
 l1_ratios = [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99]
+
+
+def univariate_cox_screen(X, df_surv, n_min=50, n_max=100):
+    """
+    Univariable Cox regression pre-screening.
+    Returns indices of retained features (univariable p < 0.05; falls back to
+    the top-n_min by p-value if none pass; capped at n_max).
+    """
+    pvals = []
+    for j in range(X.shape[1]):
+        try:
+            cph = CoxPHFitter()
+            temp = pd.DataFrame({'RFS': df_surv['RFS'].values,
+                                 'RFS_status': df_surv['RFS_status'].values,
+                                 'feat': X[:, j]})
+            cph.fit(temp, duration_col='RFS', event_col='RFS_status')
+            pvals.append(cph.summary.loc['feat', 'p'])
+        except Exception:
+            pvals.append(1.0)
+    pvals = np.array(pvals)
+    sel_idx = np.where(pvals < 0.05)[0]
+    if len(sel_idx) == 0:
+        sel_idx = np.argsort(pvals)[:n_min]
+    elif len(sel_idx) > n_max:
+        sel_idx = sel_idx[np.argsort(pvals[sel_idx])[:n_max]]
+    return sel_idx
+
+
+def cv_select_elastic_net(X, y, df_surv, screen_within_fold=True):
+    """
+    Five-fold cross-validation of elastic-net Cox hyperparameters by C-index.
+    If screen_within_fold is True, univariable feature pre-screening is
+    performed within each fold using only the training partition
+    (paper Sec. 4.5); returns (best_alpha, best_l1_ratio, best_score).
+    """
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    folds = list(kf.split(X))
+
+    # Pre-screen features per fold (training partitions only)
+    fold_sel = []
+    for tr_idx, _ in folds:
+        if screen_within_fold:
+            fold_sel.append(univariate_cox_screen(X[tr_idx],
+                                                  df_surv.iloc[tr_idx]))
+        else:
+            fold_sel.append(np.arange(X.shape[1]))
+
+    best_score, best_a, best_l1 = -np.inf, 0.01, 0.1
+    for a in alphas:
+        for l1 in l1_ratios:
+            scores = []
+            for (tr_idx, va_idx), sel in zip(folds, fold_sel):
+                try:
+                    m = CoxnetSurvivalAnalysis(l1_ratio=l1, alphas=[a],
+                                               max_iter=10000)
+                    m.fit(X[tr_idx][:, sel], y[tr_idx])
+                    p = m.predict(X[va_idx][:, sel])
+                    c = concordance_index_censored(
+                        y[va_idx]['RFS_status'], y[va_idx]['RFS'], p)[0]
+                    scores.append(c)
+                except Exception:
+                    scores.append(0.5)
+            mean_c = np.mean(scores)
+            if mean_c > best_score:
+                best_score, best_a, best_l1 = mean_c, a, l1
+    return best_a, best_l1, best_score
+
+
+def save_model(model_dir, model_name, model_type, feat_file, selected_features,
+               imp, scaler, coxnet, best_a, best_l1, c_train, c_test,
+               method=None):
+    os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(imp, os.path.join(model_dir, 'imputer.joblib'))
+    joblib.dump(scaler, os.path.join(model_dir, 'scaler.joblib'))
+    joblib.dump(coxnet, os.path.join(model_dir, 'cox_model.joblib'))
+    n_nz = int(np.sum(np.abs(coxnet.coef_) > 1e-6))
+    cfg = {
+        'model_name': model_name,
+        'model_type': model_type,
+        'selected_features': list(selected_features),
+        'n_selected': len(selected_features),
+        'n_nonzero': n_nz,
+        'alpha': best_a,
+        'l1_ratio': best_l1,
+        'train_c_index': round(c_train, 4),
+        'test_c_index': round(c_test, 4),
+    }
+    if feat_file is not None:
+        cfg['feature_file'] = feat_file
+    if method is not None:
+        cfg['method'] = method
+    with open(os.path.join(model_dir, 'config.json'), 'w') as f:
+        json.dump(cfg, f, indent=2)
+    print(f'  Saved to: {model_dir}')
+    return n_nz
+
 
 # ============================================================
 # 1. Deep feature models
@@ -41,7 +165,7 @@ for model_name, feat_file in DEEP_MODELS.items():
     data = feats.merge(clinical[['Split', 'ID', 'RFS', 'RFS_status']],
                        on=['Split', 'ID'], how='inner')
 
-    train = data[data['Split'] == 'ext1']
+    train = data[data['Split'] == 'ext1'].reset_index(drop=True)
     X_train = train[feature_cols].values.astype(float)
 
     # Imputation & scaling (computed on training set)
@@ -53,54 +177,27 @@ for model_name, feat_file in DEEP_MODELS.items():
     y_train = Surv.from_dataframe('RFS_status', 'RFS',
                                    train[['RFS_status', 'RFS']])
 
-    # Univariate Cox screening (training set only)
-    pvals = []
-    for j in range(X_train_s.shape[1]):
-        try:
-            cph = CoxPHFitter()
-            temp = pd.DataFrame({'RFS': train['RFS'], 'RFS_status': train['RFS_status'],
-                                 'feat': X_train_s[:, j]})
-            cph.fit(temp, duration_col='RFS', event_col='RFS_status')
-            pvals.append(cph.summary.loc['feat', 'p'])
-        except:
-            pvals.append(1.0)
-    pvals = np.array(pvals)
-    sel_idx = np.where(pvals < 0.05)[0]
-    if len(sel_idx) == 0:
-        sel_idx = np.argsort(pvals)[:50]
-    elif len(sel_idx) > 100:
-        sel_idx = sel_idx[np.argsort(pvals[sel_idx])[:100]]
+    # 5-fold CV to select alpha/l1_ratio; univariable Cox pre-screening is
+    # performed within each fold using only the training partition.
+    best_a, best_l1, best_score = cv_select_elastic_net(
+        X_train_s, y_train, train, screen_within_fold=True)
+    print(f'  CV best: alpha={best_a}, l1_ratio={best_l1}, '
+          f'score={best_score:.4f}')
 
+    # Univariable Cox screening on the full development cohort (EVC1) for the
+    # final refit.
+    sel_idx = univariate_cox_screen(X_train_s, train)
     selected_features = [feature_cols[i] for i in sel_idx]
     X_train_sel = X_train_s[:, sel_idx]
     print(f'  Selected features: {len(selected_features)}')
 
-    # 5-fold CV to select alpha
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
-    best_score, best_a, best_l1 = -np.inf, 0.01, 0.1
-    for a in alphas:
-        for l1 in l1_ratios:
-            scores = []
-            for tr_idx, va_idx in kf.split(X_train_sel):
-                try:
-                    m = CoxnetSurvivalAnalysis(l1_ratio=l1, alphas=[a], max_iter=10000)
-                    m.fit(X_train_sel[tr_idx], y_train[tr_idx])
-                    p = m.predict(X_train_sel[va_idx])
-                    c = concordance_index_censored(
-                        y_train[va_idx]['RFS_status'], y_train[va_idx]['RFS'], p)[0]
-                    scores.append(c)
-                except:
-                    scores.append(0.5)
-            mean_c = np.mean(scores)
-            if mean_c > best_score:
-                best_score, best_a, best_l1 = mean_c, a, l1
-
-    # Train model
-    coxnet = CoxnetSurvivalAnalysis(l1_ratio=best_l1, alphas=[best_a], max_iter=10000)
+    # Final model refitted on the entire EVC1 cohort (paper Sec. 4.5)
+    coxnet = CoxnetSurvivalAnalysis(l1_ratio=best_l1, alphas=[best_a],
+                                    max_iter=10000)
     coxnet.fit(X_train_sel, y_train)
     n_nz = np.sum(np.abs(coxnet.coef_) > 1e-6)
 
-    # Evaluate
+    # Evaluate on the independent validation cohort (EVC2)
     test = data[data['Split'] == 'ext2']
     X_test = imp.transform(test[feature_cols].values.astype(float))
     X_test_s = scaler.transform(X_test)[:, sel_idx]
@@ -114,116 +211,70 @@ for model_name, feat_file in DEEP_MODELS.items():
     print(f'  Train C-index: {c_train:.4f}, Test C-index: {c_test:.4f}')
     print(f'  Non-zero coefs: {n_nz}')
 
-    # Save model
-    model_dir = os.path.join(MODEL_DIR, model_name)
-    os.makedirs(model_dir, exist_ok=True)
-    joblib.dump(imp, os.path.join(model_dir, 'imputer.joblib'))
-    joblib.dump(scaler, os.path.join(model_dir, 'scaler.joblib'))
-    joblib.dump(coxnet, os.path.join(model_dir, 'cox_model.joblib'))
-    with open(os.path.join(model_dir, 'config.json'), 'w') as f:
-        json.dump({
-            'model_name': model_name,
-            'model_type': 'deep_features',
-            'feature_file': feat_file,
-            'selected_features': selected_features,
-            'n_selected': len(selected_features),
-            'n_nonzero': int(n_nz),
-            'alpha': best_a,
-            'l1_ratio': best_l1,
-            'train_c_index': round(c_train, 4),
-            'test_c_index': round(c_test, 4),
-        }, f, indent=2)
-    print(f'  Saved to: {model_dir}')
+    save_model(os.path.join(MODEL_DIR, model_name), model_name,
+               'deep_features', feat_file, selected_features,
+               imp, scaler, coxnet, best_a, best_l1, c_train, c_test)
 
 
 # ============================================================
-    # 2. Clinical model (Elastic Net only, no univariate pre-screening)
+# 2. Clinical reference models (elastic-net Cox, no univariable
+#    pre-screening; paper Sec. 4.5)
 # ============================================================
-print(f'\n{"="*60}')
-print('Training: Clinical (Elastic Net, no pre-filtering)')
-
-train_c = clinical[clinical['Split'] == 'ext1']
-X_tr = train_c[CLIN_COLS].values.astype(float)
-
-imp = SimpleImputer(strategy='mean')
-X_tr_imp = imp.fit_transform(X_tr)
-scaler = StandardScaler()
-X_tr_s = scaler.fit_transform(X_tr_imp)
-y_tr = Surv.from_dataframe('RFS_status', 'RFS', train_c[['RFS_status', 'RFS']])
-print(f'  Features: {len(CLIN_COLS)} (all used directly)')
-
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-best_score, best_a, best_l1 = -np.inf, 0.01, 0.1
-for a in alphas:
-    for l1 in l1_ratios:
-        scores = []
-        for tr_idx, va_idx in kf.split(X_tr_s):
-            try:
-                m = CoxnetSurvivalAnalysis(l1_ratio=l1, alphas=[a], max_iter=10000)
-                m.fit(X_tr_s[tr_idx], y_tr[tr_idx])
-                p = m.predict(X_tr_s[va_idx])
-                c = concordance_index_censored(
-                    y_tr[va_idx]['RFS_status'], y_tr[va_idx]['RFS'], p)[0]
-                scores.append(c)
-            except:
-                scores.append(0.5)
-        mean_c = np.mean(scores)
-        if mean_c > best_score:
-            best_score, best_a, best_l1 = mean_c, a, l1
-
-print(f'  CV best: alpha={best_a}, l1_ratio={best_l1}, score={best_score:.4f}')
-
-coxnet = CoxnetSurvivalAnalysis(l1_ratio=best_l1, alphas=[best_a], max_iter=10000)
-coxnet.fit(X_tr_s, y_tr)
-n_nz = int(np.sum(np.abs(coxnet.coef_) > 1e-6))
-
-# Show coefficients
-print(f'  Coefficients ({n_nz}/{len(CLIN_COLS)} non-zero):')
-for i, c in enumerate(CLIN_COLS):
-    coef = float(coxnet.coef_[i])
-    mark = '' if abs(coef) > 1e-6 else ' (zeroed)'
-    print(f'    {c:25s}: {coef:+.4f}{mark}')
-
-# Evaluate
-test_c = clinical[clinical['Split'] == 'ext2']
-X_te = scaler.transform(imp.transform(test_c[CLIN_COLS].values.astype(float)))
-y_te = Surv.from_dataframe('RFS_status', 'RFS', test_c[['RFS_status', 'RFS']])
-risk_test = coxnet.predict(X_te)
-c_test = concordance_index_censored(y_te['RFS_status'], y_te['RFS'], risk_test)[0]
-
-risk_train = coxnet.predict(X_tr_s)
-c_train = concordance_index_censored(y_tr['RFS_status'], y_tr['RFS'], risk_train)[0]
-
-print(f'  Train C-index: {c_train:.4f}, Test C-index: {c_test:.4f}')
-
-# Time-dep AUC
 from sksurv.metrics import cumulative_dynamic_auc
-for t in [12, 24, 36]:
-    try:
-        aucs, _ = cumulative_dynamic_auc(y_tr, y_te, risk_test, [t])
-        print(f'  AUC_{t}m: {aucs[0]:.4f}')
-    except:
-        print(f'  AUC_{t}m: N/A')
 
-model_dir = os.path.join(MODEL_DIR, 'Clinical')
-os.makedirs(model_dir, exist_ok=True)
-joblib.dump(imp, os.path.join(model_dir, 'imputer.joblib'))
-joblib.dump(scaler, os.path.join(model_dir, 'scaler.joblib'))
-joblib.dump(coxnet, os.path.join(model_dir, 'cox_model.joblib'))
-with open(os.path.join(model_dir, 'config.json'), 'w') as f:
-    json.dump({
-        'model_name': 'Clinical',
-        'model_type': 'clinical',
-        'method': 'Elastic Net Cox, no univariate pre-filtering',
-        'selected_features': CLIN_COLS,
-        'n_selected': len(CLIN_COLS),
-        'n_nonzero': n_nz,
-        'alpha': best_a,
-        'l1_ratio': best_l1,
-        'train_c_index': round(c_train, 4),
-        'test_c_index': round(c_test, 4),
-    }, f, indent=2)
-print(f'  Saved to: {model_dir}')
+for clin_name, clin_cols in CLINICAL_MODELS.items():
+    print(f'\n{"="*60}')
+    print(f'Training: {clin_name} (Elastic Net, no pre-filtering)')
+
+    train_c = clinical[clinical['Split'] == 'ext1']
+    X_tr = train_c[clin_cols].values.astype(float)
+
+    imp = SimpleImputer(strategy='mean')
+    X_tr_imp = imp.fit_transform(X_tr)
+    scaler = StandardScaler()
+    X_tr_s = scaler.fit_transform(X_tr_imp)
+    y_tr = Surv.from_dataframe('RFS_status', 'RFS', train_c[['RFS_status', 'RFS']])
+    print(f'  Features: {len(clin_cols)} (all used directly): {clin_cols}')
+
+    best_a, best_l1, best_score = cv_select_elastic_net(
+        X_tr_s, y_tr, train_c.reset_index(drop=True), screen_within_fold=False)
+    print(f'  CV best: alpha={best_a}, l1_ratio={best_l1}, score={best_score:.4f}')
+
+    coxnet = CoxnetSurvivalAnalysis(l1_ratio=best_l1, alphas=[best_a],
+                                    max_iter=10000)
+    coxnet.fit(X_tr_s, y_tr)
+    n_nz = int(np.sum(np.abs(coxnet.coef_) > 1e-6))
+
+    print(f'  Coefficients ({n_nz}/{len(clin_cols)} non-zero):')
+    for i, c in enumerate(clin_cols):
+        coef = float(coxnet.coef_[i])
+        mark = '' if abs(coef) > 1e-6 else ' (zeroed)'
+        print(f'    {c:25s}: {coef:+.4f}{mark}')
+
+    # Evaluate on EVC2
+    test_c = clinical[clinical['Split'] == 'ext2']
+    X_te = scaler.transform(imp.transform(test_c[clin_cols].values.astype(float)))
+    y_te = Surv.from_dataframe('RFS_status', 'RFS', test_c[['RFS_status', 'RFS']])
+    risk_test = coxnet.predict(X_te)
+    c_test = concordance_index_censored(y_te['RFS_status'], y_te['RFS'], risk_test)[0]
+
+    risk_train = coxnet.predict(X_tr_s)
+    c_train = concordance_index_censored(y_tr['RFS_status'], y_tr['RFS'], risk_train)[0]
+
+    print(f'  Train C-index: {c_train:.4f}, Test C-index: {c_test:.4f}')
+
+    # Time-dep AUC
+    for t in [12, 24, 36]:
+        try:
+            aucs, _ = cumulative_dynamic_auc(y_tr, y_te, risk_test, [t])
+            print(f'  AUC_{t}m: {aucs[0]:.4f}')
+        except Exception:
+            print(f'  AUC_{t}m: N/A')
+
+    save_model(os.path.join(MODEL_DIR, clin_name), clin_name, 'clinical',
+               None, clin_cols, imp, scaler, coxnet, best_a, best_l1,
+               c_train, c_test,
+               method='Elastic Net Cox, no univariate pre-filtering')
 
 print(f'\n{"="*60}')
 print(f'All models saved to: {MODEL_DIR}')

@@ -1,4 +1,4 @@
-#
+"""
 RFS prediction model inference.
 Usage:
   from infer_rfs import RFSInferencer
@@ -6,10 +6,12 @@ Usage:
   risk_scores = infer.predict(dataframe)
 
 Input DataFrame requirements:
-  -   - Deep feature models: must contain all feature columns (feat_0, feat_1, ...)
-  -   - Clinical model: must contain Sex, Age, MVI, PathologicalGrade, HBsAg, AFP, ALT, AST, GGT
-  -   - Multiple feature groups can be included; auto-matched by model name
-#
+  - Deep feature models: must contain all feature columns (feat_0, feat_1, ...)
+  - Clinical model: must contain the 8 preoperative variables
+    (Sex, Age, HBsAg, AFP, ALT, AST, GGT, tumor_size)
+  - Clinicopathological model: additionally requires MVI and PathologicalGrade
+  - Multiple feature groups can be included; auto-matched by model name
+"""
 import pandas as pd, numpy as np, os, json, joblib, warnings
 warnings.filterwarnings('ignore')
 
@@ -20,9 +22,7 @@ class RFSInferencer:
     #Load trained RFS models and run inference.#
 
     def __init__(self, model_dir=None):
-        #
-        model_dir: path to RFS_model directory (default: ./RFS_model)
-        #
+#         model_dir: path to RFS_model directory (default: ./RFS_model)
         if model_dir is None:
             model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RFS_model')
         self.model_dir = model_dir
@@ -59,11 +59,9 @@ class RFSInferencer:
         return list(self.models.keys())
 
     def predict(self, data, model_name=None):
-        #
-        Compute risk scores (log hazard ratio) from input DataFrame.
-        Returns dict: {model_name: np.array of risk scores}
-        If model_name is specified, returns only that model array.
-        #
+        # Compute risk scores (log hazard ratio) from input DataFrame.
+        # Returns dict: {model_name: np.array of risk scores}
+        # If model_name is specified, returns only that model array.
         if model_name is not None:
             return self._predict_one(data, model_name)
 
@@ -97,11 +95,9 @@ class RFSInferencer:
         return risk
 
     def predict_survival(self, data, times, model_name=None):
-        #
-        Predict survival probabilities at specified time points.
-        times: list of time points, e.g. [12, 24, 36]
-        Returns: {model_name: DataFrame(rows=samples, cols=times)}
-        #
+        # Predict survival probabilities at specified time points.
+        # times: list of time points, e.g. [12, 24, 36]
+        # Returns: {model_name: DataFrame(rows=samples, cols=times)}
         risk = self.predict(data, model_name)
         if model_name is not None:
             risk = {model_name: risk}
