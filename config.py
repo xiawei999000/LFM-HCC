@@ -18,7 +18,7 @@ MVI_GRADE_MODELS = [
     "LFM-DL", "LFM-Mix", "LFM-Seq",
 ]
 RFS_MODELS = [
-    "Clinical model", "Radiomics", "FMCIB",
+    "Clinical model", "Clinicopathological model", "Radiomics", "FMCIB",
     "LFM-Base", "LFM-DL", "LFM-Mix", "LFM-Seq",
 ]
 
@@ -26,19 +26,19 @@ MODEL_COLORS = {
     "Radiomics": "#D62728", "FMCIB": "#9467BD",
     "LFM-Base": "#7F7F7F", "LFM-DL": "#2CA02C",
     "LFM-Mix": "#1F77B4", "LFM-Seq": "#FF7F0E",
-    "Clinical model": "#999999",
+    "Clinical model": "#999999", "Clinicopathological model": "#555555",
 }
 MODEL_LINESTYLES = {
     "Radiomics": "--", "FMCIB": "--",
     "LFM-Base": ":", "LFM-DL": "-",
     "LFM-Mix": "-", "LFM-Seq": "-",
-    "Clinical model": "-",
+    "Clinical model": "-", "Clinicopathological model": "-",
 }
 MODEL_LINEWIDTHS = {
     "Radiomics": 1.2, "FMCIB": 1.2,
     "LFM-Base": 0.9, "LFM-DL": 1.5,
     "LFM-Mix": 1.5, "LFM-Seq": 1.8,
-    "Clinical model": 1.5,
+    "Clinical model": 1.5, "Clinicopathological model": 1.5,
 }
 
 # ── Radiomics ─────────────────────────────────────────────────
@@ -78,14 +78,20 @@ FEATURE_TABLES = {
 }
 
 # ── Pretraining ───────────────────────────────────────────────
+# Paper (Sec. 4.3): AdamW, initial LR 1e-3, batch size 128, 100 epochs.
 PRETRAIN_IMG_SIZE = 128
-PRETRAIN_BATCH_SIZE = 256
+PRETRAIN_BATCH_SIZE = 128
 PRETRAIN_LR = 1e-3
 PRETRAIN_EPOCHS = 100
 
 # ── Finetuning ────────────────────────────────────────────────
-FINETUNE_LR_RANGE = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3]
+# Paper (Sec. 4.4): all LFM variants fine-tuned with a fixed learning rate
+# of 1e-4, AdamW, batch size 32, weight decay 1e-4, up to 20 epochs,
+# cosine LR schedule (min LR 1e-6), early stopping with patience 5.
+FINETUNE_LR_RANGE = [1e-4]
 FINETUNE_EPOCHS = 20
 FINETUNE_BATCH_SIZE = 32
+FINETUNE_PATIENCE = 5
+FINETUNE_WEIGHT_DECAY = 1e-4
 
 

@@ -93,14 +93,21 @@ python pretraining/pretrain_LFM.py --data_dir <dl_patches> --output_dir <ckpt_dl
 python pretraining/pretrain_LFM.py --data_dir <mix_patches> --output_dir <ckpt_mix>
 
 # Sequential pretraining (LFM-Seq)
+# Paper (Sec. 4.3): the second HCC-specific adaptation stage is limited to
+# ONE epoch to preserve generic lesion features.
 python pretraining/pretrain_LFM.py --data_dir <dl_patches> --output_dir <ckpt_dl>
-python pretraining/pretrain_LFM.py --data_dir <hcc_patches> --output_dir <ckpt_seq> --resume <ckpt_dl/best.pth>
+python pretraining/pretrain_LFM.py --data_dir <hcc_patches> --output_dir <ckpt_seq> --resume <ckpt_dl/best.pth> --epochs 1
 ```
 
 ### 4. Fine-tuning
 
 ```bash
-python finetuning/finetune_LFM.py --lr_list 1e-5,5e-5,1e-4 --epochs 20
+# Paper (Sec. 4.4): fixed LR 1e-4, batch size 32, weight decay 1e-4,
+# up to 20 epochs, cosine LR schedule (min LR 1e-6), early stopping patience 5.
+python finetuning/finetune_LFM.py --lr_list 1e-4 --batch_size 32 --epochs 20 --patience 5 \
+    --cohort_a_excel <a.xlsx> --cohort_a_ap_dir <ap_a> --cohort_a_pv_dir <pv_a> \
+    --cohort_b_excel <b.xlsx> --cohort_b_ap_dir <ap_b> --cohort_b_pv_dir <pv_b> \
+    --pretrained_weights <ckpt_seq/best.pth>
 ```
 
 ### 5. Robustness Tests
