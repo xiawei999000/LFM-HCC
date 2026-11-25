@@ -109,8 +109,11 @@ class RFSInferencer:
             X = data[features].values.astype(float)
             X_imp = self.models[name]['imputer'].transform(X)
             X_scaled = self.models[name]['scaler'].transform(X_imp)
-            surv_matrix = self.models[name]['model'].predict_survival_function(X_scaled)
-            model_times = self.models[name]['model'].event_times_
+            # return_array=True gives an [n_samples, n_times] matrix (the
+            # default StepFunction objects do not support 2D indexing).
+            surv_matrix = self.models[name]['model'].predict_survival_function(
+                X_scaled, return_array=True)
+            model_times = self.models[name]['model'].unique_times_
             surv_list = []
             for i in range(surv_matrix.shape[0]):
                 surv_list.append(np.interp(times, model_times, surv_matrix[i, :],

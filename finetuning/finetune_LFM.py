@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import random
 import time
 import torch
 import torch.nn as nn
@@ -13,6 +15,14 @@ from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 from timm.models.vision_transformer import vit_small_patch8_224
 import openpyxl
+
+
+def set_seed(seed=42):
+    """Fix Python/NumPy/PyTorch seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 # ============================================================
@@ -460,12 +470,14 @@ def train_model(cfg, model, dataloaders, device, weight_dir, train_log_dir, lr_t
 
     best_val_mvi = 0.0
     best_val_grade = 0.0
+    best_val_joint = 0.0
     best_val_loss = float('inf')
     patience_counter = 0
     last_epoch = 0
 
     best_mvi_record = {'epoch': 0, 'val': 0.0, 'filename': ''}
     best_grade_record = {'epoch': 0, 'val': 0.0, 'filename': ''}
+    best_joint_record = {'epoch': 0, 'val': 0.0, 'filename': ''}
 
     print("=" * 70)
     print(f"Training | LR={cfg.LR:.2e} | backbone unfrozen | Cross-Attn | Uncertainty Loss")
@@ -554,6 +566,19 @@ def train_model(cfg, model, dataloaders, device, weight_dir, train_log_dir, lr_t
                 'epoch': epoch, 'val': auc_val[1], 'filename': save_name}
             saved_any = True
 
+        # Joint-best checkpoint: best mean of val MVI and Grade AUC. This is
+        # the single checkpoint used for final inference on both tasks, so
+        # that MVI and Grade predictions come from the same model state.
+        current_joint_rnd = round((auc_val[0] + auc_val[1]) / 2.0, 3)
+        if current_joint_rnd > best_val_joint:
+            best_val_joint = current_joint_rnd
+            save_name = f"best_Joint_val{current_joint_rnd:.3f}_epoch{epoch}.pth"
+            torch.save(model.state_dict(), os.path.join(weight_dir, save_name))
+            print(f"  >>> Saved best Joint model: {save_name}")
+            best_joint_record = {
+                'epoch': epoch, 'val': current_joint_rnd, 'filename': save_name}
+            saved_any = True
+
         if not saved_any:
             print("  --- Val AUC (MVI/Grade) did not improve, skipping save ---")
 
@@ -577,6 +602,9 @@ def train_model(cfg, model, dataloaders, device, weight_dir, train_log_dir, lr_t
         'best_grade_epoch': best_grade_record['epoch'],
         'best_val_grade': best_grade_record['val'],
         'best_grade_weight': best_grade_record['filename'],
+        'best_joint_epoch': best_joint_record['epoch'],
+        'best_val_joint': best_joint_record['val'],
+        'best_joint_weight': best_joint_record['filename'],
         'best_val_auc_mean': (best_mvi_record['val'] + best_grade_record['val']) / 2.0,
         'weight_dir': weight_dir,
         'epoch_log_xlsx': log_path, 'epoch_log_csv': csv_path,
@@ -632,9 +660,13 @@ def youden_threshold(labels, probs):
 
 def run_inference(cfg, best_result, device):
     weight_dir = best_result["overall_best_lr"]["weight_dir"]
-    mvi_weight = best_result["overall_best_lr"]["best_mvi_weight"]
-    checkpoint = os.path.join(weight_dir, mvi_weight)
-    print(f"\n[*] Loading best model: {checkpoint}")
+    # Use the joint-best checkpoint (best mean val AUC across both tasks) for
+    # final inference so that MVI and Grade predictions come from the same
+    # model state; fall back to the MVI-best checkpoint if unavailable.
+    joint_weight = best_result["overall_best_lr"].get("best_joint_weight") or \
+        best_result["overall_best_lr"]["best_mvi_weight"]
+    checkpoint = os.path.join(weight_dir, joint_weight)
+    print(f"\n[*] Loading best joint model: {checkpoint}")
 
     model = MultiTaskMILModel(cfg).to(device)
     model.load_state_dict(torch.load(checkpoint, map_location=device))
@@ -652,6 +684,19 @@ def run_inference(cfg, best_result, device):
                                  train_pred["PathologicalGrade_prob"])
     print(f"[*] Youden thresholds from training cohort: "
           f"MVI={mvi_thr:.4f}, Grade={grade_thr:.4f}")
+
+    # Persist the thresholds actually used, for reproducibility and for
+    # passing to inference/infer_LFM.py (--threshold_mvi/--threshold_grade).
+    thresholds_path = os.path.join(cfg.OUTPUT_DIR, "thresholds.json")
+    with open(thresholds_path, "w") as f:
+        json.dump({
+            "mvi_threshold": mvi_thr,
+            "grade_threshold": grade_thr,
+            "method": "Youden index maximized on the training cohort "
+                      "(paper Sec. 4.7), applied unchanged to all cohorts",
+            "checkpoint": checkpoint,
+        }, f, indent=2)
+    print(f"[*] Thresholds saved: {thresholds_path}")
 
     for cohort, ap_dir, pv_dir, excel_path, out_name in [
         ("Cohort A", cfg.COHORT_A_AP_DIR, cfg.COHORT_A_PV_DIR, cfg.COHORT_A_EXCEL, "predictions_cohort_a.xlsx"),
@@ -712,11 +757,14 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for Python/NumPy/PyTorch")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    set_seed(args.seed)
     cfg = Config(args)
 
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)

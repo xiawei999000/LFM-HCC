@@ -356,9 +356,12 @@ def main():
 
     # Run inference
     if args.mode == "predict":
+        print(f"[*] Thresholds: MVI={args.threshold_mvi}, Grade={args.threshold_grade}")
         df = run_predict(model, loader, device,
                          mvi_threshold=args.threshold_mvi,
                          grade_threshold=args.threshold_grade)
+        df["MVI_threshold"] = args.threshold_mvi
+        df["Grade_threshold"] = args.threshold_grade
         if args.excel and os.path.exists(args.excel):
             clinical = pd.read_excel(args.excel)
             label_cols = [c for c in ["MVI", "PathologicalGrade", "Recurrence", "RFS"]
