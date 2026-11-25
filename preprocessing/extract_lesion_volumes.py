@@ -20,7 +20,8 @@ class HCCVolumeConfig:
         self.PHASE = phase
 
         self.SPACING = [1.0, 1.0]
-        self.WINDOW_CENTER = 0
+        # Paper (Sec. 4.2): soft-tissue window, width 400 HU and level 40 HU.
+        self.WINDOW_CENTER = 40
         self.WINDOW_WIDTH = 400
 
         self.PERITUMORAL_MARGIN = 10

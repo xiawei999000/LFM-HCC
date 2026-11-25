@@ -14,37 +14,24 @@ def convert_to_hu(img_uint16):
     return img_uint16.astype(np.int32) - 32768
 
 
-def apply_dicom_window(hu_array, dicom_window_str):
+def apply_window(hu_array, level, width):
     """
-    Apply DICOM window/level to HU array.
-    Formula: I = clip((HU - A) / (B - A) * 255, 0, 255)
-
-    Args:
-        hu_array: HU values (int32)
-        dicom_window_str: CSV DICOM_windows field, e.g. "-1350,200" (lung) or "40,400" (abdomen)
-    Returns:
-        uint8 array in [0, 255]
+    Apply a fixed CT window/level to an HU array.
+    Formula: I = clip((HU - (level - width/2)) / width * 255, 0, 255)
     """
-    try:
-        window_vals = [float(x) for x in str(dicom_window_str).split(',')]
-        if len(window_vals) != 2:
-            raise ValueError(f"Invalid window format: {dicom_window_str}")
-        A, B = window_vals[0], window_vals[1]
+    lower = level - width / 2.0
+    windowed = (hu_array - lower) / float(width) * 255.0
+    windowed = np.clip(windowed, 0, 255)
+    return windowed.astype(np.uint8)
 
-        if abs(B - A) < 1e-6:
-            return np.zeros_like(hu_array, dtype=np.uint8)
 
-        windowed = (hu_array - A) / (B - A) * 255.0
-        windowed = np.clip(windowed, 0, 255)
-        return windowed.astype(np.uint8)
-
-    except Exception as e:
-        print(f"Warning: Failed to apply window '{dicom_window_str}', using fallback. Error: {e}")
-        hu_min, hu_max = np.min(hu_array), np.max(hu_array)
-        if hu_max > hu_min:
-            normalized = (hu_array - hu_min) / (hu_max - hu_min) * 255
-            return normalized.astype(np.uint8)
-        return np.zeros_like(hu_array, dtype=np.uint8)
+def parse_dicom_window(dicom_window_str):
+    """Parse a DICOM_windows CSV field (e.g. "-1350,200") into (level, width)."""
+    window_vals = [float(x) for x in str(dicom_window_str).split(',')]
+    if len(window_vals) != 2:
+        raise ValueError(f"Invalid window format: {dicom_window_str}")
+    lower, upper = window_vals
+    return (lower + upper) / 2.0, upper - lower
 
 
 def crop_and_expand(img, bbox_px, expand_ratio=0.2):
@@ -70,7 +57,7 @@ def crop_and_expand(img, bbox_px, expand_ratio=0.2):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Extract DICOM-windowed lesion patches from DeepLesion dataset"
+        description="Extract soft-tissue-windowed lesion patches from DeepLesion dataset"
     )
     parser.add_argument("--csv_path", type=str, required=True,
                         help="Path to DL_info.csv")
@@ -80,6 +67,15 @@ def parse_args():
                         help="Output directory for lesion patches")
     parser.add_argument("--patch_size", type=int, default=128,
                         help="Output patch size (square)")
+    # Paper (Sec. 4.2): "All pretraining patches were windowed using a
+    # soft-tissue setting (width of 400 HU and level of 40 HU)".
+    parser.add_argument("--window_level", type=float, default=40.0,
+                        help="Window level in HU (default: 40, soft-tissue)")
+    parser.add_argument("--window_width", type=float, default=400.0,
+                        help="Window width in HU (default: 400, soft-tissue)")
+    parser.add_argument("--use_dicom_window", action="store_true",
+                        help="Use the per-image DICOM_windows field from DL_info.csv "
+                             "instead of the fixed soft-tissue window")
     return parser.parse_args()
 
 
@@ -95,6 +91,11 @@ def main():
     print(f"CSV entries: {len(df)}")
     print(f"Output directory: {args.output_dir}")
     print(f"Patch size: {args.patch_size}x{args.patch_size}")
+    if args.use_dicom_window:
+        print("Windowing: per-image DICOM_windows from CSV")
+    else:
+        print(f"Windowing: fixed soft-tissue window (level={args.window_level}, "
+              f"width={args.window_width})")
 
     for png_file in png_files:
         image_rel_path = os.path.relpath(png_file, args.image_dir)
@@ -111,7 +112,10 @@ def main():
             bbox_px = np.array(bounding_box_str.split(','), dtype=float)
             int_bbox = [int(coord) for coord in bbox_px]
 
-            dicom_window_str = matching_row['DICOM_windows'].iloc[0]
+            if args.use_dicom_window:
+                level, width = parse_dicom_window(matching_row['DICOM_windows'].iloc[0])
+            else:
+                level, width = args.window_level, args.window_width
 
             img = cv2.imread(png_file, cv2.IMREAD_UNCHANGED)
             if img is None:
@@ -124,7 +128,7 @@ def main():
             cropped_img = crop_and_expand(img, int_bbox)
 
             hu_img = convert_to_hu(cropped_img)
-            windowed_img = apply_dicom_window(hu_img, dicom_window_str)
+            windowed_img = apply_window(hu_img, level, width)
             resized_img = cv2.resize(windowed_img, (args.patch_size, args.patch_size),
                                      interpolation=cv2.INTER_LINEAR)
 
@@ -132,13 +136,13 @@ def main():
             output_path = os.path.join(args.output_dir, output_name)
             cv2.imwrite(output_path, resized_img)
 
-            print(f'Saved: {output_path} | Window: {dicom_window_str}')
+            print(f'Saved: {output_path} | Window: level={level}, width={width}')
 
         except Exception as e:
             print(f'Error processing {image_name}: {e}')
             continue
 
-    print("Done: All images processed with DICOM windowing.")
+    print("Done: All images processed.")
 
 
 if __name__ == "__main__":
