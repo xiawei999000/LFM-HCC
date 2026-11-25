@@ -592,7 +592,7 @@ def train_model(cfg, model, dataloaders, device, weight_dir, train_log_dir, lr_t
 # Inference — predict per-patient scores
 # ============================================================
 @torch.no_grad()
-def predict_cohort(model, dataloader, device):
+def predict_cohort(model, dataloader, device, mvi_threshold=0.5, grade_threshold=0.5):
     model.eval()
     all_probs, all_labels, all_pids = [], [], []
 
@@ -613,13 +613,21 @@ def predict_cohort(model, dataloader, device):
     df = pd.DataFrame({
         "ID": [int(p) for p in all_pids],
         "MVI_label": labels[:, 0].astype(int),
-        "MVI_prediction": (probs[:, 0] >= 0.5).astype(int),
+        "MVI_prediction": (probs[:, 0] >= mvi_threshold).astype(int),
         "MVI_prob": probs[:, 0].round(4),
         "PathologicalGrade_label": labels[:, 1].astype(int),
-        "PathologicalGrade_prediction": (probs[:, 1] >= 0.5).astype(int),
+        "PathologicalGrade_prediction": (probs[:, 1] >= grade_threshold).astype(int),
         "PathologicalGrade_prob": probs[:, 1].round(4),
     })
     return df
+
+
+def youden_threshold(labels, probs):
+    """Classification threshold maximizing the Youden index (paper Sec. 4.7)."""
+    from sklearn.metrics import roc_curve
+    fpr, tpr, thresholds = roc_curve(labels, probs)
+    idx = int(np.argmax(tpr - fpr))
+    return float(thresholds[idx])
 
 
 def run_inference(cfg, best_result, device):
@@ -630,6 +638,20 @@ def run_inference(cfg, best_result, device):
 
     model = MultiTaskMILModel(cfg).to(device)
     model.load_state_dict(torch.load(checkpoint, map_location=device))
+
+    # Paper (Sec. 4.7): the classification threshold is determined on the
+    # training cohort by maximizing the Youden index and is then applied
+    # unchanged to the internal and external validation cohorts.
+    train_ds, _, _, _ = prepare_data_splits(cfg)
+    train_loader = data.DataLoader(
+        train_ds, batch_size=cfg.BATCH_SIZE, shuffle=False,
+        collate_fn=my_collate, num_workers=0, pin_memory=True)
+    train_pred = predict_cohort(model, train_loader, device)
+    mvi_thr = youden_threshold(train_pred["MVI_label"], train_pred["MVI_prob"])
+    grade_thr = youden_threshold(train_pred["PathologicalGrade_label"],
+                                 train_pred["PathologicalGrade_prob"])
+    print(f"[*] Youden thresholds from training cohort: "
+          f"MVI={mvi_thr:.4f}, Grade={grade_thr:.4f}")
 
     for cohort, ap_dir, pv_dir, excel_path, out_name in [
         ("Cohort A", cfg.COHORT_A_AP_DIR, cfg.COHORT_A_PV_DIR, cfg.COHORT_A_EXCEL, "predictions_cohort_a.xlsx"),
@@ -646,7 +668,8 @@ def run_inference(cfg, best_result, device):
             ds, batch_size=cfg.BATCH_SIZE, shuffle=False,
             collate_fn=my_collate, num_workers=0, pin_memory=True)
 
-        pred_df = predict_cohort(model, loader, device)
+        pred_df = predict_cohort(model, loader, device,
+                                 mvi_threshold=mvi_thr, grade_threshold=grade_thr)
         out_path = os.path.join(cfg.OUTPUT_DIR, out_name)
         pred_df.to_excel(out_path, index=False, engine="openpyxl")
         print(f"[*] {cohort} predictions saved: {out_path}")
@@ -678,12 +701,17 @@ def parse_args():
                         help="Path to custom pretrained DINOv2 checkpoint (.pth)")
     parser.add_argument("--output_dir", type=str, default="./output_finetune_custom",
                         help="Output directory for checkpoints and predictions")
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--lr_list", type=str, default="3e-5,1e-4,3e-4",
-                        help="Comma-separated list of learning rates to sweep")
+    # Paper (Sec. 4.4): AdamW, batch size 32, weight decay 1e-4, learning rate
+    # 1e-4 (fixed; all LFM variants share the same optimization settings),
+    # up to 20 epochs, cosine LR schedule with min LR 1e-6, early stopping
+    # with a patience of 5 epochs.
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--lr_list", type=str, default="1e-4",
+                        help="Comma-separated list of learning rates to sweep "
+                             "(paper uses a fixed LR of 1e-4)")
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--patience", type=int, default=3)
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--patience", type=int, default=5)
     return parser.parse_args()
 
 
