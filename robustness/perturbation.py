@@ -1,6 +1,15 @@
 """
 Input perturbation robustness test: simulates inter-reader variability in tumor localization.
 Applies 0-25% random shifts to ROI center across 50 independent runs to assess AUC stability.
+
+NOTE (approximation): the paper (Sec. 4.4) describes perturbing the tumor
+bounding-box coordinates. This script perturbs the ALREADY-CROPPED lesion
+volumes by translating them (i.e., it approximates bbox perturbation without
+re-cropping from the original CT). Edge regions are filled according to
+Config.PAD_MODE ('zeros' reproduces the original behavior; 'edge'/'reflect'
+avoid artificial black borders). All random draws use seeded
+numpy.random.Generator instances keyed by (split, perturbation level, run),
+so every run is fully reproducible.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,6 +45,10 @@ class Config:
     N_RUNS = 50
     IMG_SIZE = 128
     EMBED_DIM = 384
+    SEED_BASE = 42
+    # Padding mode for vacated regions after shifting: 'zeros' (original
+    # behavior), 'edge', or 'reflect'.
+    PAD_MODE = 'zeros'
 
 os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
 
@@ -166,52 +179,59 @@ def load_and_prepare_data(cfg):
 # ==========================================
 # Perturbation functions
 # ==========================================
-def shift_volume(vol, sx, sy, sz):
-    """Translate volume, fill empty regions with zeros."""
+def shift_volume(vol, sx, sy, sz, pad_mode='zeros'):
+    """
+    Translate a volume by (sz, sy, sx) voxels.
+    pad_mode: 'zeros' (original behavior), 'edge', or 'reflect' — controls how
+    the vacated border regions are filled.
+    """
     D, H, W = vol.shape
-    shifted = np.zeros_like(vol)
-
-    if sx >= 0:
-        sx1, sx2, dx1, dx2 = 0, W - sx, sx, W
+    if pad_mode == 'zeros':
+        padded = np.pad(vol, ((abs(sz), abs(sz)), (abs(sy), abs(sy)),
+                              (abs(sx), abs(sx))),
+                        mode='constant', constant_values=0)
+    elif pad_mode in ('edge', 'reflect'):
+        padded = np.pad(vol, ((abs(sz), abs(sz)), (abs(sy), abs(sy)),
+                              (abs(sx), abs(sx))),
+                        mode=pad_mode)
     else:
-        sx1, sx2, dx1, dx2 = -sx, W, 0, W + sx
-    if sy >= 0:
-        sy1, sy2, dy1, dy2 = 0, H - sy, sy, H
-    else:
-        sy1, sy2, dy1, dy2 = -sy, H, 0, H + sy
-    if sz >= 0:
-        sz1, sz2, dz1, dz2 = 0, D - sz, sz, D
-    else:
-        sz1, sz2, dz1, dz2 = -sz, D, 0, D + sz
+        raise ValueError(f"Unknown pad_mode: {pad_mode}")
 
-    sx1, sx2 = max(0, sx1), min(W, sx2)
-    dx1, dx2 = max(0, dx1), min(W, dx2)
-    sy1, sy2 = max(0, sy1), min(H, sy2)
-    dy1, dy2 = max(0, dy1), min(H, dy2)
-    sz1, sz2 = max(0, sz1), min(D, sz2)
-    dz1, dz2 = max(0, dz1), min(D, dz2)
-
-    if sx2 > sx1 and sy2 > sy1 and sz2 > sz1:
-        shifted[dz1:dz2, dy1:dy2, dx1:dx2] = vol[sz1:sz2, sy1:sy2, sx1:sx2]
-    return shifted
+    z1 = abs(sz) + sz
+    y1 = abs(sy) + sy
+    x1 = abs(sx) + sx
+    return padded[z1:z1 + D, y1:y1 + H, x1:x1 + W]
 
 
-def perturb_and_infer(model, patient_data, max_shift, device):
-    """
-    Apply random perturbations to patients and run inference. Returns [N, 2] logits.
-    """
-    all_logits = []
+def generate_shifts(patient_data, max_shift, rng):
+    """Draw one random (sx, sy, sz) shift per patient using a seeded RNG."""
+    shifts = []
     for p in patient_data:
         if max_shift == 0:
+            shifts.append((0, 0, 0))
+            continue
+        sx = int(rng.integers(-max_shift, max_shift + 1))
+        sy = int(rng.integers(-max_shift, max_shift + 1))
+        max_z = max(1, int(p['D'] * max_shift / 128))
+        sz = int(rng.integers(-max_z, max_z + 1))
+        shifts.append((sx, sy, sz))
+    return shifts
+
+
+def perturb_and_infer(model, patient_data, shifts, device, pad_mode='zeros'):
+    """
+    Apply the given per-patient shifts and run inference. Returns [N, 2] logits.
+    Passing the same shifts to both task models keeps MVI and Grade evaluated
+    under identical perturbations.
+    """
+    all_logits = []
+    for p, (sx, sy, sz) in zip(patient_data, shifts):
+        if sx == 0 and sy == 0 and sz == 0:
             ap_s = p['ap_vol']
             pv_s = p['pv_vol']
         else:
-            sx = np.random.randint(-max_shift, max_shift + 1)
-            sy = np.random.randint(-max_shift, max_shift + 1)
-            max_z = max(1, int(p['D'] * max_shift / 128))
-            sz = np.random.randint(-max_z, max_z + 1)
-            ap_s = shift_volume(p['ap_vol'], sx, sy, sz)
-            pv_s = shift_volume(p['pv_vol'], sx, sy, sz)
+            ap_s = shift_volume(p['ap_vol'], sx, sy, sz, pad_mode=pad_mode)
+            pv_s = shift_volume(p['pv_vol'], sx, sy, sz, pad_mode=pad_mode)
 
         ap_t = torch.from_numpy(ap_s.copy()).unsqueeze(1).to(device)
         pv_t = torch.from_numpy(pv_s.copy()).unsqueeze(1).to(device)
@@ -256,9 +276,10 @@ def run_robustness_test(cfg):
         y_mvi = np.array([p['mvi'] for p in data[split_name]])
         y_grade = np.array([p['grade'] for p in data[split_name]])
 
-        logits_mvi = perturb_and_infer(model_mvi, data[split_name], 0, device)
+        zero_shifts = [(0, 0, 0)] * len(data[split_name])
+        logits_mvi = perturb_and_infer(model_mvi, data[split_name], zero_shifts, device)
         base_auc_mvi = roc_auc_score(y_mvi, 1/(1+np.exp(-logits_mvi[:, 0])))
-        logits_grade = perturb_and_infer(model_grade, data[split_name], 0, device)
+        logits_grade = perturb_and_infer(model_grade, data[split_name], zero_shifts, device)
         base_auc_grade = roc_auc_score(y_grade, 1/(1+np.exp(-logits_grade[:, 1])))
 
         all_aucs['MVI'][split_name]['0%'] = [base_auc_mvi] * cfg.N_RUNS
@@ -269,19 +290,31 @@ def run_robustness_test(cfg):
     total_combos = len(cfg.PERTURB_LEVELS[1:]) * 3 * cfg.N_RUNS * 2
     pbar = tqdm(total=total_combos, desc='Perturbation test')
 
-    for max_shift, label in zip(cfg.PERTURB_LEVELS[1:], cfg.PERTURB_LABELS[1:]):
-        for split_name in ['val', 'ext1', 'ext2']:
+    split_order = ['val', 'ext1', 'ext2']
+    for level_idx, (max_shift, label) in enumerate(
+            zip(cfg.PERTURB_LEVELS[1:], cfg.PERTURB_LABELS[1:]), start=1):
+        for split_idx, split_name in enumerate(split_order):
             y_mvi = np.array([p['mvi'] for p in data[split_name]])
             y_grade = np.array([p['grade'] for p in data[split_name]])
 
             for run in range(cfg.N_RUNS):
-                # MVI model -> MVI AUC
-                logits_mvi = perturb_and_infer(model_mvi, data[split_name], max_shift, device)
+                # Deterministic per-(level, split, run) seed -> reproducible shifts
+                run_seed = (cfg.SEED_BASE + level_idx * 100000
+                            + split_idx * 1000 + run)
+                rng = np.random.default_rng(run_seed)
+                shifts = generate_shifts(data[split_name], max_shift, rng)
+
+                # MVI model -> MVI AUC (same shifts as Grade below)
+                logits_mvi = perturb_and_infer(
+                    model_mvi, data[split_name], shifts, device,
+                    pad_mode=cfg.PAD_MODE)
                 probs_mvi = 1.0 / (1.0 + np.exp(-logits_mvi[:, 0]))
                 auc_mvi = roc_auc_score(y_mvi, probs_mvi) if len(np.unique(y_mvi)) > 1 else 0.5
 
-                # Grade model -> Grade AUC
-                logits_grade = perturb_and_infer(model_grade, data[split_name], max_shift, device)
+                # Grade model -> Grade AUC (identical perturbation)
+                logits_grade = perturb_and_infer(
+                    model_grade, data[split_name], shifts, device,
+                    pad_mode=cfg.PAD_MODE)
                 probs_grade = 1.0 / (1.0 + np.exp(-logits_grade[:, 1]))
                 auc_grade = roc_auc_score(y_grade, probs_grade) if len(np.unique(y_grade)) > 1 else 0.5
 
