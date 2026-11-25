@@ -42,13 +42,17 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # Model Configurations
 # ==========================================
+# Paper (Sec. 4.4): "All LFM variants were trained using the same fine-tuning
+# strategy and optimization settings" — AdamW, learning rate 1e-4, weight decay
+# 1e-4, batch size 32, up to 20 epochs, cosine LR schedule (min LR 1e-6),
+# early stopping with patience 5.
 MODEL_CONFIGS = {
     'dinov2': {
         'backbone_name': 'vit_small_patch14_dinov2.lvd142m',
         'weights_file': 'dinov2_vits14_pretrain.pth',
         'img_size': 224,
         'in_chans': 3,
-        'lr': 1e-3,
+        'lr': 1e-4,
         'pretrain_type': 'official',
         'use_timm_create': True,
     },
@@ -57,7 +61,7 @@ MODEL_CONFIGS = {
         'weights_file': 'deeplesion_dinov2_epoch047_loss7.8206_std0.0428.pth',
         'img_size': 128,
         'in_chans': 1,
-        'lr': 3e-5,
+        'lr': 1e-4,
         'pretrain_type': 'deeplesion',
         'use_timm_create': False,
     },
@@ -66,7 +70,7 @@ MODEL_CONFIGS = {
         'weights_file': 'Combine_dinov2_epoch055_loss8.1210_std0.0430.pth',
         'img_size': 128,
         'in_chans': 1,
-        'lr': 3e-5,
+        'lr': 1e-4,
         'pretrain_type': 'combine',
         'use_timm_create': False,
     },
@@ -75,7 +79,7 @@ MODEL_CONFIGS = {
         'weights_file': 'Continue_dinov2_epoch000_loss7.6499_std0.0391_best.pth',
         'img_size': 128,
         'in_chans': 1,
-        'lr': 3e-5,
+        'lr': 1e-4,
         'pretrain_type': 'continue',
         'use_timm_create': False,
     },

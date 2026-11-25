@@ -231,8 +231,7 @@ def run_robustness_test(cfg):
     print(f"[*] Device: {device}")
 
     # Preprocess data
-    print("
-[*] Loading data into memory...")
+    print("\n[*] Loading data into memory...")
     data = load_and_prepare_data(cfg)
 
     # Load model
@@ -252,8 +251,7 @@ def run_robustness_test(cfg):
             all_aucs[task][s] = {lbl: [] for lbl in cfg.PERTURB_LABELS}
 
     # Baseline (max_shift=0) performance, repeated 50 times
-    print("
-[*] Baseline test (no perturbation)...")
+    print("\n[*] Baseline test (no perturbation)...")
     for split_name in ['val', 'ext1', 'ext2']:
         y_mvi = np.array([p['mvi'] for p in data[split_name]])
         y_grade = np.array([p['grade'] for p in data[split_name]])
@@ -315,8 +313,7 @@ def save_results(all_aucs, cfg):
 
     df = pd.DataFrame(rows)
     df.to_excel(os.path.join(cfg.OUTPUT_DIR, 'perturbation_auc_summary.xlsx'), index=False)
-    print(f"
-[*] AUC summary saved")
+    print(f"\n[*] AUC summary saved")
 
     # 50-run raw AUC data
     auc_records = []

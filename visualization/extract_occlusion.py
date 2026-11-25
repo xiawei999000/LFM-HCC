@@ -33,9 +33,9 @@ PRED_DF = pd.read_excel(PRED_MVI_GRADE_PATH)
 CLI_DF = pd.read_excel(CLINICAL_INFO_PATH)
 CLI_DF.columns = CLI_DF.columns.str.strip()
 
-OCCLUSION_SIZE = 8  # occlusion block size in pixels
-STRIDE = 8          # stride (8 gives 16×16 grid)
-GRID_SIZE = 128 // STRIDE  # 8
+OCCLUSION_SIZE = 8  # occlusion block size in pixels (paper Sec. 4.6: 8x8 window)
+STRIDE = 8          # stride in pixels (paper Sec. 4.6: stride of 8)
+GRID_SIZE = 128 // STRIDE  # 16
 
 
 class CrossPhaseAttention(nn.Module):
@@ -96,6 +96,38 @@ def load_volume(pid, phase):
     img = sitk.ReadImage(os.path.join(d, pid + '.nii.gz'))
     return sitk.GetArrayFromImage(img).astype(np.float32) / 255.0
 
+RISK_SCORE_COL = 'DINOv2_Continue_risk'  # LFM-Seq risk score column
+
+# Paper (Sec. 4.5): patients are categorized into high-/low-risk groups using
+# the median risk score in EVC1 (Split == 'ext1') as the cutoff; the cutoff is
+# fixed and applied unchanged to other cohorts.
+RISK_CUTOFF = float(
+    RISK_DF.loc[RISK_DF['Split'] == 'ext1', RISK_SCORE_COL].median())
+
+
+def _youden_threshold(labels, probs, fallback=0.5):
+    """Threshold maximizing the Youden index (paper Sec. 4.7)."""
+    from sklearn.metrics import roc_curve
+    try:
+        fpr, tpr, thr = roc_curve(labels, probs)
+        return float(thr[np.argmax(tpr - fpr)])
+    except Exception:
+        return fallback
+
+
+# Paper (Sec. 4.7): classification thresholds are determined on the training
+# cohort by maximizing the Youden index.
+_train_pred = PRED_DF[PRED_DF['Split'] == 'train'] if 'Split' in PRED_DF.columns \
+    else PRED_DF.iloc[0:0]
+if len(_train_pred) > 0:
+    MVI_THRESHOLD = _youden_threshold(_train_pred['MVI'], _train_pred['MVI_prob'])
+    GRADE_THRESHOLD = _youden_threshold(_train_pred['PathologicalGrade'],
+                                        _train_pred['PathologicalGrade_prob'])
+else:
+    print('[!] Training-cohort predictions not found; using 0.5 thresholds.')
+    MVI_THRESHOLD = GRADE_THRESHOLD = 0.5
+
+
 def get_metadata(pid):
     r = RISK_DF[(RISK_DF['Split']=='ext2')&(RISK_DF['ID']==int(pid))]
     p = PRED_DF[(PRED_DF['Split']=='ext2')&(PRED_DF['ID']==int(pid))]
@@ -103,7 +135,7 @@ def get_metadata(pid):
     return {
         'mvi_true': int(p['MVI'].values[0]), 'grade_true': int(p['PathologicalGrade'].values[0]),
         'size': c['tumor_max_size_mm'].values[0],
-        'risk': r['DINOv2_Continue_risk'].values[0] if len(r)>0 else np.nan,
+        'risk': r[RISK_SCORE_COL].values[0] if len(r)>0 else np.nan,
         'rfs': r['RFS'].values[0] if len(r)>0 else np.nan,
         'rfs_status': int(r['RFS_status'].values[0]) if len(r)>0 else np.nan,
     }
@@ -275,9 +307,9 @@ def visualize_case(case):
     # Score card (right bottom) + colorbar
     ax_s = fig.add_subplot(gs_right[1])
     ax_s.axis('off')
-    mvi_tag = 'TP' if meta['mvi_true']==1 and prob_mvi>=0.35 else ('FN' if meta['mvi_true']==1 else ('TN' if prob_mvi<0.35 else 'FP'))
-    grade_tag = 'TP' if meta['grade_true']==1 and prob_grade>=0.5 else ('FN' if meta['grade_true']==1 else ('TN' if prob_grade<0.5 else 'FP'))
-    risk_tag = 'High' if meta['risk']>=0.0215 else 'Low'
+    mvi_tag = 'TP' if meta['mvi_true']==1 and prob_mvi>=MVI_THRESHOLD else ('FN' if meta['mvi_true']==1 else ('TN' if prob_mvi<MVI_THRESHOLD else 'FP'))
+    grade_tag = 'TP' if meta['grade_true']==1 and prob_grade>=GRADE_THRESHOLD else ('FN' if meta['grade_true']==1 else ('TN' if prob_grade<GRADE_THRESHOLD else 'FP'))
+    risk_tag = 'High' if meta['risk'] >= RISK_CUTOFF else 'Low'
     rfs_str = 'event' if meta['rfs_status']==1 else 'no event'
     sz = meta['size']
 

@@ -223,7 +223,7 @@ def my_collate(batch):
 # Inference modes
 # ============================================================
 @torch.no_grad()
-def run_predict(model, dataloader, device):
+def run_predict(model, dataloader, device, mvi_threshold=0.5, grade_threshold=0.5):
     all_probs, all_pids = [], []
     for ap_list, pv_list, pids in dataloader:
         results = []
@@ -239,9 +239,9 @@ def run_predict(model, dataloader, device):
     probs = np.concatenate(all_probs, axis=0)
     df = pd.DataFrame({
         "ID": [int(p) for p in all_pids],
-        "MVI_prediction": (probs[:, 0] >= 0.5).astype(int),
+        "MVI_prediction": (probs[:, 0] >= mvi_threshold).astype(int),
         "MVI_prob": probs[:, 0].round(4),
-        "Grade_prediction": (probs[:, 1] >= 0.5).astype(int),
+        "Grade_prediction": (probs[:, 1] >= grade_threshold).astype(int),
         "Grade_prob": probs[:, 1].round(4),
     })
     return df
@@ -310,6 +310,16 @@ def parse_args():
     # Optional
     parser.add_argument("--excel", type=str, default=None,
                         help="Path to clinical Excel (filters patients by ID column if provided)")
+    # Paper (Sec. 4.7): the classification threshold is determined on the
+    # training cohort by maximizing the Youden index and is then applied
+    # unchanged to the validation cohorts. Pass the values reported by the
+    # fine-tuning script here.
+    parser.add_argument("--threshold_mvi", type=float, default=0.5,
+                        help="MVI classification threshold (default 0.5; paper uses "
+                             "the Youden-index threshold derived on the training cohort)")
+    parser.add_argument("--threshold_grade", type=float, default=0.5,
+                        help="Pathological grade classification threshold (default 0.5; "
+                             "paper uses the Youden-index threshold derived on the training cohort)")
     parser.add_argument("--batch_size", type=int, default=1,
                         help="Batch size (usually 1 for variable-length volumes)")
     parser.add_argument("--num_workers", type=int, default=0)
@@ -346,7 +356,9 @@ def main():
 
     # Run inference
     if args.mode == "predict":
-        df = run_predict(model, loader, device)
+        df = run_predict(model, loader, device,
+                         mvi_threshold=args.threshold_mvi,
+                         grade_threshold=args.threshold_grade)
         if args.excel and os.path.exists(args.excel):
             clinical = pd.read_excel(args.excel)
             label_cols = [c for c in ["MVI", "PathologicalGrade", "Recurrence", "RFS"]
